@@ -1,0 +1,28 @@
+{
+  "default": "deny",
+  "auto_merge_enabled": false,
+  "requires_human_approval": [
+    "authentication",
+    "authorization",
+    "resumes",
+    "storage",
+    "security",
+    "ci",
+    "automation",
+    "billing",
+    "ads",
+    "infra",
+    "privacy",
+    "secrets",
+    "data_deletion"
+  ],
+  "requires": [
+    "required_status_checks",
+    "codeql",
+    "coderabbit_exact_sha",
+    "no_unresolved_threads",
+    "isolated_execution",
+    "test_discovery",
+    "branch_rules"
+  ]
+}

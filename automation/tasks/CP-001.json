@@ -1,0 +1,13 @@
+{
+  "id": "CP-001",
+  "title": "Local read-only CareerPilot foundation",
+  "status": "implemented-starter",
+  "acceptance": [
+    "Anonymous synthetic job listing",
+    "Parameterized query filters",
+    "API tests",
+    "React TypeScript UI",
+    "GitHub CI and CodeRabbit integration",
+    "No resume or auth endpoints"
+  ]
+}

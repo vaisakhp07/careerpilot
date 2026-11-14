@@ -1,0 +1,19 @@
+import React, { useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import './style.css';
+
+type Job = { id:number; title:string; company:string; city:string; mode:string; skills:string; source:string; original_url:string|null; verified_at:string };
+type Result = { items:Job[]; total:number; demo_data:boolean };
+const initial: Result = {items:[],total:0,demo_data:true};
+function App(){
+  const [q,setQ]=useState(''); const [city,setCity]=useState(''); const [mode,setMode]=useState(''); const [skill,setSkill]=useState('');
+  const [result,setResult]=useState<Result>(initial); const [loading,setLoading]=useState(true); const [error,setError]=useState('');
+  useEffect(()=>{
+    const ctrl = new AbortController(); const query=new URLSearchParams({q,city,mode,skill});
+    setLoading(true); setError('');
+    fetch('/api/jobs?'+query,{signal:ctrl.signal}).then(async response=>{if(!response.ok) throw new Error('Search unavailable'); return response.json() as Promise<Result>}).then(setResult).catch(e=>{if(e.name!=='AbortError')setError('API unavailable. Start the local API using scripts/bootstrap.sh.');}).finally(()=>{if(!ctrl.signal.aborted)setLoading(false)});
+    return ()=>ctrl.abort();
+  },[q,city,mode,skill]);
+  return <div className="shell"><header><div className="brand"><div className="mark">C</div><div><strong>CareerPilot</strong><small>India-first job discovery</small></div></div><span className="tag">LOCAL MVP · v0.1</span></header><main><section className="hero"><span className="eyebrow">FIND YOUR NEXT MOVE</span><h1>Find better-fit opportunities.<br/><em>Know what matters.</em></h1><p>Explore technology roles with transparent filters and source information. This preview uses synthetic jobs only.</p></section><div className="layout"><aside><h2>Refine results</h2><label>Job title or company<input aria-label="Title or company" placeholder="e.g. DevOps" value={q} onChange={e=>setQ(e.target.value)}/></label><label>City<input aria-label="City" placeholder="Kochi, Bengaluru..." value={city} onChange={e=>setCity(e.target.value)}/></label><label>Skills<input aria-label="Skills" placeholder="AWS, Python..." value={skill} onChange={e=>setSkill(e.target.value)}/></label><label>Work arrangement<select aria-label="Work arrangement" value={mode} onChange={e=>setMode(e.target.value)}><option value="">All arrangements</option><option value="remote">Remote</option><option value="hybrid">Hybrid</option><option value="onsite">On-site</option></select></label><button onClick={()=>{setQ('');setCity('');setSkill('');setMode('')}} className="clear">Clear filters</button></aside><section className="results"><div className="resultsbar"><div><h2>Browse opportunities</h2><p>{loading?'Searching...':`${result.total} demonstration jobs`}</p></div><span className="demo">SYNTHETIC DATA</span></div>{error&&<p role="alert" className="error">{error}</p>}{!error&&!loading&&result.items.length===0&&<div className="empty">No matches. Try broader filters.</div>}{result.items.map(job=><article key={job.id} className="job"><div className="jobtop"><div className="avatar">{job.company.slice(0,1)}</div><div><h3>{job.title}</h3><p>{job.company}</p></div><span className="mode">{job.mode}</span></div><p className="meta">📍 {job.city} <span>·</span> Verified: {new Date(job.verified_at).toLocaleDateString('en-IN')}</p><div className="chips">{job.skills.split(',').filter(Boolean).map(s=><span key={s}>{s.trim()}</span>)}</div><footer><span>Demo listing · not a real vacancy</span><button disabled title="Available when verified sources are connected">Apply source unavailable</button></footer></article>)}</section></div></main><div className="bottom">CareerPilot • Privacy-first prototype • No login, ads, tracking, or resume upload yet.</div></div>;
+}
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);

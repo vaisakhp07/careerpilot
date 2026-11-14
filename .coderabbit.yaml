@@ -1,0 +1,10 @@
+language: en-US
+reviews:
+  profile: assertive
+  auto_review:
+    enabled: true
+  path_instructions:
+    - path: "services/api/**"
+      instructions: "Review data validation, injection risk, information disclosure, CORS, cross-user authorization, logging, and query limits."
+    - path: "automation/**"
+      instructions: "Treat automation, Git credentials, policy, and test execution as high risk. Never assume a green CodeRabbit check equals an approval."

@@ -1,0 +1,19 @@
+{
+  "id": "CP-002",
+  "title": "Read-only approved employer job ingestion and freshness",
+  "status": "planned",
+  "approval_required": true,
+  "allowed_scope": [
+    "services/ingestion/",
+    "services/api/",
+    "tests/"
+  ],
+  "acceptance": [
+    "Manual approved company list",
+    "No SSRF or cross-host redirects",
+    "Terms and quotas review",
+    "Duplicate normalization",
+    "Staleness tracking",
+    "Separate fake and real jobs"
+  ]
+}
