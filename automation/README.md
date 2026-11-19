@@ -16,3 +16,5 @@ Existing `ai-dev-loop` + `pr_autofix_v3.py` proved partial Ollama → PR → Cod
 
 ## IMPORTANT
 No continuous agent is enabled in CP-001. Do not run an untrusted coding LLM with full shell/GitHub/AWS access on the primary macOS user session.
+
+CodeRabbit integration verification.
