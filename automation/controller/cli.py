@@ -1,27 +1,27 @@
-"""CareerPilot CP-AUTO-001 phase 1: read-only repository/review diagnostics.
+"""CareerPilot read-only GitHub repository and PR trust verification.
 
-No model execution, shell execution of PR code, modification of remote branches,
-merging, or automatic review-thread resolution. No third-party dependencies.
+No model execution, PR code execution, pushing, merging or thread resolution.
 """
 from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 EXPECTED = 'vaisakhp07/careerpilot'
-REQUIRED = {
-    ('validate', 'github-actions'),
-    ('analyze (python)', 'github-actions'),
-    ('analyze (javascript-typescript)', 'github-actions'),
-    ('CodeRabbit', 'coderabbitai'),
-    ('security-gates', 'github-actions'),
+EXPECTED_CHECKS = {
+    'validate': ('github-actions', 15368),
+    'analyze (python)': ('github-actions', 15368),
+    'analyze (javascript-typescript)': ('github-actions', 15368),
+    'CodeRabbit': ('coderabbitai', 347564),
+    'security-gates': ('github-actions', 15368),
 }
+REQUIRED = {(name, app) for name, (app, _) in EXPECTED_CHECKS.items()}
 
 
-def command(args: list[str], cwd: Path, timeout: int = 30) -> str:
+def command(args: list[str], cwd: Path, timeout: int = 40) -> str:
     result = subprocess.run(args, cwd=cwd, text=True, capture_output=True,
                             timeout=timeout, check=False)
     if result.returncode:
@@ -33,8 +33,13 @@ def repo_root() -> Path:
     return Path(command(['git', 'rev-parse', '--show-toplevel'], Path.cwd())).resolve()
 
 
-def gh(root: Path, *args: str) -> object:
-    return json.loads(command(['gh', 'api', *args], root))
+def gh_pages(root: Path, endpoint: str) -> list[object]:
+    """Retrieve every GitHub API page via its Link pagination headers."""
+    raw = command(['gh', 'api', '--paginate', '--slurp', endpoint], root, timeout=120)
+    pages = json.loads(raw)
+    if not isinstance(pages, list) or not pages:
+        raise RuntimeError('Unexpected paginated GitHub API response')
+    return pages
 
 
 def verify_remote(root: Path) -> None:
@@ -43,24 +48,61 @@ def verify_remote(root: Path) -> None:
         raise RuntimeError(f'Refusing unexpected repo {actual!r}; expected {EXPECTED}')
 
 
+def required_rules(root: Path) -> list[dict]:
+    rules = []
+    for page in gh_pages(root, f'repos/{EXPECTED}/rules/branches/main?per_page=100'):
+        if not isinstance(page, list):
+            raise TypeError('Unexpected branch-rules page shape')
+        if not all(isinstance(item, dict) for item in page):
+            raise RuntimeError('Unexpected branch rule data')
+        rules.extend(page)
+    return rules
+
+
+def evaluate_bindings(rules: list[dict]) -> tuple[list[str], list[dict]]:
+    configured = {}
+    for rule in rules:
+        if rule.get('type') != 'required_status_checks':
+            continue
+        for item in (rule.get('parameters') or {}).get('required_status_checks', []):
+            if not isinstance(item, dict):
+                raise TypeError('Malformed required check entry')
+            name = item.get('context')
+            if isinstance(name, str):
+                configured.setdefault(name, []).append(item.get('integration_id'))
+    missing = sorted(set(EXPECTED_CHECKS) - set(configured))
+    mismatched = []
+    for name, (app, expected_id) in sorted(EXPECTED_CHECKS.items()):
+        if name in configured and configured[name] != [expected_id]:
+            mismatched.append({'name': name, 'expected_app': app,
+                               'expected_integration_id': expected_id,
+                               'configured_integration_ids': configured[name]})
+    return missing, mismatched
+
+
 def doctor(root: Path) -> dict:
     verify_remote(root)
-    checks = gh(root, f'repos/{EXPECTED}/rules/branches/main')
-    required = set()
-    for rule in checks:
-        if rule.get('type') == 'required_status_checks':
-            for item in (rule.get('parameters') or {}).get('required_status_checks', []):
-                required.add(item.get('context'))
-    expected = {name for name, _ in REQUIRED}
-    missing = sorted(expected - required)
+    rules = required_rules(root)
+    missing, mismatched = evaluate_bindings(rules)
+    required = sorted({item.get('context') for rule in rules if rule.get('type') == 'required_status_checks'
+                       for item in (rule.get('parameters') or {}).get('required_status_checks', [])
+                       if isinstance(item.get('context'), str)})
+    strict = any(rule.get('type') == 'required_status_checks' and
+                 (rule.get('parameters') or {}).get('strict_required_status_checks_policy') is True
+                 for rule in rules)
+    pr_resolution = any(rule.get('type') == 'pull_request' and
+                        (rule.get('parameters') or {}).get('required_review_thread_resolution') is True
+                        for rule in rules)
     return {
-        'repo': EXPECTED,
-        'root': str(root),
+        'repo': EXPECTED, 'root': str(root),
         'branch': command(['git', 'branch', '--show-current'], root),
         'dirty': bool(command(['git', 'status', '--porcelain'], root)),
-        'required_checks': sorted(required),
+        'required_checks': required,
         'missing_required_checks': missing,
-        'all_required_checks_configured': not missing,
+        'mismatched_app_bindings': mismatched,
+        'strict_required_status_checks': strict,
+        'required_review_thread_resolution': pr_resolution,
+        'all_required_checks_configured': not missing and not mismatched and strict and pr_resolution,
         'safety_mode': 'read-only',
     }
 
@@ -70,26 +112,27 @@ def pr_snapshot(root: Path, number: int) -> dict:
     pr = json.loads(command(['gh', 'pr', 'view', str(number), '--json',
                              'number,headRefOid,mergeStateStatus,mergeable,state,url'], root))
     sha = pr['headRefOid']
-    raw = gh(root, f'repos/{EXPECTED}/commits/{sha}/check-runs?per_page=100')
     found = {}
-    for run in raw.get('check_runs', []):
-        key = (run.get('name'), (run.get('app') or {}).get('slug'))
-        if key in REQUIRED and run.get('head_sha') == sha:
-            old = found.get(key)
-            if old is None or (run.get('id') or 0) > (old.get('id') or 0):
-                found[key] = run
+    for page in gh_pages(root, f'repos/{EXPECTED}/commits/{sha}/check-runs?per_page=100'):
+        if not isinstance(page, dict) or not isinstance(page.get('check_runs'), list):
+            raise TypeError('Unexpected check-runs page shape')
+        for run in page['check_runs']:
+            key = (run.get('name'), (run.get('app') or {}).get('slug'))
+            if key in REQUIRED and run.get('head_sha') == sha:
+                old = found.get(key)
+                if old is None or (run.get('id') or 0) > (old.get('id') or 0):
+                    found[key] = run
     evaluations = []
     for name, app in sorted(REQUIRED):
-        r = found.get((name, app))
+        run = found.get((name, app))
         evaluations.append({
-            'name': name,
-            'app': app,
-            'status': r.get('status') if r else 'missing',
-            'conclusion': r.get('conclusion') if r else None,
-            'pass': bool(r and r.get('status') == 'completed' and r.get('conclusion') == 'success'),
+            'name': name, 'app': app,
+            'status': run.get('status') if run else 'missing',
+            'conclusion': run.get('conclusion') if run else None,
+            'pass': bool(run and run.get('status') == 'completed' and run.get('conclusion') == 'success'),
         })
     return {'pr': pr, 'checks': evaluations, 'checks_pass': all(e['pass'] for e in evaluations),
-            'note': 'Check success alone does not prove review threads are resolved.'}
+            'note': 'Check success does not imply review threads are resolved or that the PR is mergeable.'}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         report = doctor(root) if args.action == 'doctor' else pr_snapshot(root, args.number)
         print(json.dumps(report, indent=2))
         return 0 if report.get('all_required_checks_configured', report.get('checks_pass', False)) else 2
-    except (RuntimeError, subprocess.TimeoutExpired, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except (RuntimeError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f'Controller stopped safely: {exc}', file=sys.stderr)
         return 1
 
