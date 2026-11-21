@@ -73,7 +73,7 @@ def evaluate_bindings(rules: list[dict]) -> tuple[list[str], list[dict]]:
     missing = sorted(set(EXPECTED_CHECKS) - set(configured))
     mismatched = []
     for name, (app, expected_id) in sorted(EXPECTED_CHECKS.items()):
-        if name in configured and configured[name] != [expected_id]:
+        if name in configured and set(configured[name]) != {expected_id}:
             mismatched.append({'name': name, 'expected_app': app,
                                'expected_integration_id': expected_id,
                                'configured_integration_ids': configured[name]})

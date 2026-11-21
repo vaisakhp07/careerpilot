@@ -104,5 +104,26 @@ class ControllerPhase1Tests(unittest.TestCase):
             cli.pr_snapshot(Path('/tmp'), 14)
 
 
+    def test_duplicate_correct_binding_is_accepted(self):
+        rules = valid_rules()
+        rules.append({
+            'type': 'required_status_checks',
+            'parameters': {
+                'required_status_checks': [
+                    {'context': 'validate', 'integration_id': 15368}
+                ]
+            },
+        })
+
+        missing, mismatched = cli.evaluate_bindings(rules)
+        self.assertEqual(missing, [])
+        self.assertEqual(mismatched, [])
+
+        rules[-1]['parameters']['required_status_checks'][0]['integration_id'] = 999
+        _, mismatched = cli.evaluate_bindings(rules)
+        self.assertEqual(len(mismatched), 1)
+        self.assertEqual(mismatched[0]['name'], 'validate')
+
+
 if __name__ == '__main__':
     unittest.main()
