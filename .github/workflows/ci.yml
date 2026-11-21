@@ -22,7 +22,7 @@ jobs:
         run: ruff check services tests --select E4,E7,E9,F
       - name: API tests
         run: python -m pytest tests -q
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Frontend dependencies
