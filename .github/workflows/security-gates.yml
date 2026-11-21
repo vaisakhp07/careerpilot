@@ -33,7 +33,7 @@ jobs:
         run: bandit -q -r services/api services/ingestion -ll
       - name: Scan tracked code for potential secrets
         run: |
-          detect-secrets scan --all-files --exclude-files '(^|/)package-lock\.json$' > /tmp/careerpilot-secrets.json
+          detect-secrets scan --exclude-files '(^|/)package-lock\.json$' > /tmp/careerpilot-secrets.json
           python - <<'PYSEC'
           import json
           report = json.load(open('/tmp/careerpilot-secrets.json'))
